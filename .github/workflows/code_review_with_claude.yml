@@ -1,0 +1,36 @@
+name: Code Review From Claude
+ 
+permissions:
+  contents: read
+  pull-requests: write
+ 
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+ 
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+ 
+      - name: Run Claude Code Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_PERSONAL_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGUAGE: Korean
+          MODEL: claude-sonnet-4-5
+        run: |
+          DIFF=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD)
+          REVIEW=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d "$(jq -n --arg diff "$DIFF" --arg lang "$LANGUAGE" --arg model "$MODEL" '{
+              model: $model, max_tokens: 2048,
+              messages: [{role: "user", content: ("Review this code diff in \($lang):\n\n\($diff)")}]
+            }')" | jq -r '.content[0].text')
+          gh pr comment ${{ github.event.pull_request.number }} --body "## 🤖 Claude Code Review\n\n$REVIEW"
